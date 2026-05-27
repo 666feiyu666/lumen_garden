@@ -18,7 +18,7 @@
 | [游戏流程表](game-flow.md) | 描述界面流转、单局循环与下一版教学流程 |
 | [游戏设计文档](game-design-document.md) | 统一玩法、美术、技术、测试与版本目标 |
 | [月夜入门设计](tutorial-level-design.md) | 把康威规则转化为可玩的引导体验 |
-| [美术概念图 Prompts](art-prompts.md) | 用于生成首页、游戏界面和教学界面概念图 |
+| [美术概念图 Prompts](art-prompts.md) | 确认最终概念画面，并生成可组合进游戏的背景、面板与精灵资产 |
 | [戏剧方向决策](narrative-directions.md) | 记录萤光花园主方案与星图守望备选方案 |
 | [种植花谱模式设计](classic-mode-design.md) | 规定灯灵播种、经典图案验证与自由演化玩法的边界 |
 

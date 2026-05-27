@@ -11,4 +11,4 @@
 | 03 | [固定花圃与花谱教学播放](03-fixed-garden-and-planting-playback.md) | 统一正式花圃、重制花园五关并打磨种植教学验证 | 已完成 |
 | 04 | [经典动画花谱扩展](04-classic-pattern-expansion.md) | 移植周期与飞船图案，完成种植花谱第一册五关 | 已完成 |
 | 05 | [播种确认与花谱循环展示](05-planting-input-and-pattern-showcase.md) | 明确播种输入、防止提前验证，并让成功花谱可持续观看 | 已完成 |
-| 06 | [绘本美术资产与声音氛围接入](06-art-and-music-asset-integration.md) | 将灯灵、花朵、界面与背景概念转为可验证的正式素材管线 | 设计确认中 |
+| 06 | [绘本美术资产与声音氛围接入](06-art-and-music-asset-integration.md) | 确认最终概念画面、灯灵双形态、音乐来源与分层素材提示词 | 已完成 |

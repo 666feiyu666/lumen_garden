@@ -17,6 +17,9 @@ WINDOW_SIZES = ((1024, 576), (1280, 720), (1600, 900))
 FPS = 60
 PLANTING_PLAYBACK_INTERVAL = 0.7
 ASSET_ROOT = Path(__file__).resolve().parent.parent / "assets"
+FORMAL_BOARD_ORIGIN = (72, 150)
+FORMAL_BOARD_TILE_LIMIT = 60
+FORMAL_BOARD_MAX_SIZE = (550, 474)
 
 BG_TOP = (18, 22, 49)
 BG_BOTTOM = (29, 45, 48)
@@ -160,6 +163,8 @@ class LumenGardenApp:
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
+            if self.audio.handle_event(event):
+                continue
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
@@ -323,13 +328,26 @@ class LumenGardenApp:
             (1, 0): Command.RIGHT,
         }.get(delta)
 
+    @staticmethod
+    def _formal_board_layout(width: int, height: int) -> tuple[pygame.Rect, int]:
+        tile = min(
+            FORMAL_BOARD_TILE_LIMIT,
+            FORMAL_BOARD_MAX_SIZE[0] // width,
+            FORMAL_BOARD_MAX_SIZE[1] // height,
+        )
+        board = pygame.Rect(
+            FORMAL_BOARD_ORIGIN[0],
+            FORMAL_BOARD_ORIGIN[1],
+            width * tile,
+            height * tile,
+        )
+        return board, tile
+
     def _game_click(self, point: tuple[int, int]) -> None:
         assert self.state is not None
         puzzle = self.state.puzzle
-        tile = min(32, 570 // puzzle.width, 474 // puzzle.height)
-        command = self._grid_command(
-            point, pygame.Rect(52, 145, puzzle.width * tile, puzzle.height * tile), tile, self.state.player
-        )
+        board, tile = self._formal_board_layout(puzzle.width, puzzle.height)
+        command = self._grid_command(point, board, tile, self.state.player)
         if command is not None and self.state.phase is Phase.ACTIVE:
             self._issue(command)
         elif pygame.Rect(796, 495, 385, 42).collidepoint(point):
@@ -339,16 +357,17 @@ class LumenGardenApp:
         elif pygame.Rect(995, 550, 186, 42).collidepoint(point):
             self.scene = "garden_menu"
             self.state = None
+            self.audio.play_music("menu")
 
     def _planting_click(self, point: tuple[int, int]) -> None:
         assert self.planting_state is not None
         state = self.planting_state
         puzzle = state.puzzle
-        tile = min(60, 550 // puzzle.width, 474 // puzzle.height)
+        board, tile = self._formal_board_layout(puzzle.width, puzzle.height)
         if state.phase is PlantingPhase.PLANTING:
             command = self._grid_command(
                 point,
-                pygame.Rect(72, 150, puzzle.width * tile, puzzle.height * tile),
+                board,
                 tile,
                 state.player,
             )
@@ -388,6 +407,7 @@ class LumenGardenApp:
         elif pygame.Rect(1082, 570, 90, 40).collidepoint(point):
             self.scene = "planting_menu"
             self.planting_state = None
+            self.audio.play_music("menu")
 
     def _tutorial_click(self, point: tuple[int, int]) -> None:
         if self.tutorial_step >= len(TUTORIAL_STEPS):
@@ -396,6 +416,7 @@ class LumenGardenApp:
             elif pygame.Rect(254, 485, 300, 42).collidepoint(point):
                 self.scene = "garden_menu"
                 self.state = None
+                self.audio.play_music("menu")
             return
         if pygame.Rect(656, 512, 218, 49).collidepoint(point):
             self._tutorial_key(pygame.K_RETURN)
@@ -404,6 +425,7 @@ class LumenGardenApp:
         elif pygame.Rect(788, 574, 150, 33).collidepoint(point):
             self.scene = "garden_menu"
             self.state = None
+            self.audio.play_music("menu")
         elif self.state is not None and self.tutorial_step < len(TUTORIAL_STEPS):
             step = TUTORIAL_STEPS[self.tutorial_step]
             tile = 68 if step.puzzle.width <= 5 else 62
@@ -962,8 +984,7 @@ class LumenGardenApp:
             (52, 75),
         )
 
-        tile = min(32, 570 // puzzle.width, 474 // puzzle.height)
-        board_rect = pygame.Rect(52, 145, puzzle.width * tile, puzzle.height * tile)
+        board_rect, tile = self._formal_board_layout(puzzle.width, puzzle.height)
         frame = board_rect.inflate(30, 30)
         self._rounded_panel(frame, active=False)
         self._draw_board(board_rect, tile)
@@ -1013,8 +1034,7 @@ class LumenGardenApp:
             (52, 75),
         )
 
-        tile = min(60, 550 // puzzle.width, 474 // puzzle.height)
-        board_rect = pygame.Rect(72, 150, puzzle.width * tile, puzzle.height * tile)
+        board_rect, tile = self._formal_board_layout(puzzle.width, puzzle.height)
         frame = board_rect.inflate(30, 30)
         self._rounded_panel(frame, active=False)
         self._draw_planting_board(board_rect, tile)

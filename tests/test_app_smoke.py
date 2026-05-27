@@ -10,6 +10,7 @@ import pygame
 from Lumen_Garden.app import LumenGardenApp
 from Lumen_Garden.model import PlantingPhase
 from Lumen_Garden.patterns import PLANTING_PUZZLES
+from Lumen_Garden.puzzles import PUZZLES
 
 
 class PlantingAppSmokeTests(unittest.TestCase):
@@ -29,9 +30,26 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.app._mouse_click((220, 360))
         self.app._mouse_click((180, 270))
         self.assertEqual("game", self.app.scene)
-        self.app._mouse_click((356, 449))
+        board, tile = self.app._formal_board_layout(
+            self.app.state.puzzle.width, self.app.state.puzzle.height
+        )
+        player = self.app.state.player
+        self.app._mouse_click(
+            (board.x + player[0] * tile + tile // 2, board.y + player[1] * tile + tile // 2)
+        )
         self.assertIsNotNone(self.app.state)
         self.assertEqual(1, self.app.state.generation)
+
+    def test_formal_modes_share_the_same_board_layout(self) -> None:
+        garden_board, garden_tile = self.app._formal_board_layout(
+            PUZZLES[0].width, PUZZLES[0].height
+        )
+        planting_board, planting_tile = self.app._formal_board_layout(
+            PLANTING_PUZZLES[0].width, PLANTING_PUZZLES[0].height
+        )
+        self.assertEqual(garden_tile, planting_tile)
+        self.assertEqual(garden_board, planting_board)
+        self.assertEqual(47, garden_tile)
 
     def test_mouse_can_change_settings(self) -> None:
         self.app._mouse_click((220, 540))
@@ -169,6 +187,20 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertEqual("planting", self.app.scene)
         self.assertIsNotNone(self.app.planting_state)
         self.assertEqual(5, self.app.planting_state.puzzle.number)
+
+    def test_mouse_back_from_puzzle_restores_menu_music(self) -> None:
+        self.app._start_puzzle(0)
+        with patch.object(self.app.audio, "play_music") as play_music:
+            self.app._mouse_click((1040, 565))
+        self.assertEqual("garden_menu", self.app.scene)
+        play_music.assert_called_once_with("menu")
+
+    def test_mouse_back_from_planting_restores_menu_music(self) -> None:
+        self.app._start_planting(0)
+        with patch.object(self.app.audio, "play_music") as play_music:
+            self.app._mouse_click((1110, 585))
+        self.assertEqual("planting_menu", self.app.scene)
+        play_music.assert_called_once_with("menu")
 
 
 if __name__ == "__main__":

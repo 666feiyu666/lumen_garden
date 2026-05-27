@@ -74,7 +74,7 @@ tests/test_app_smoke.py    无窗口 UI 烟雾测试
 - `assets/sprites/`：透明 PNG 花芽、灯灵、花瓣和萤火序列。
 - `assets/ui/`：花园手记面板、谜题封面和标题视觉。
 - `assets/fonts/`：具有授权的中文字体文件；任意 `.ttf`、`.otf` 或 `.ttc` 会被优先用于界面。
-- `assets/music/menu.ogg`、`moon_garden.ogg`、`result.ogg`：循环背景音乐。
+- `assets/music/music1.mp3` 与 `music2.mp3`：首页及选择页交替循环播放；`moon_garden.ogg`、`result.ogg`：玩法与结算背景音乐。
 - `assets/sfx/*.wav`：灯灵移动、生长、拒绝、盛放与选择音效，具体文件名见 [assets/README.md](assets/README.md)。
 
 正式扩展建议以 `model.py` 作为稳定玩法层，在其上增加新谜题、花园素材和进度存档，而不是把表现逻辑混入规则计算。
