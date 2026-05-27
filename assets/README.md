@@ -1,19 +1,18 @@
 # Lumen Garden Asset Slots
 
-The prototype renders glowing buds, a lantern spirit, and interface shapes
-procedurally, so it runs without external art or audio files. Add production
-garden assets at these paths:
+The prototype uses prepared flower and lantern sprites when available, while the
+board currently remains procedurally drawn. It falls back to procedural shapes
+when an optional visual or audio file is absent. Add production garden assets at
+these paths:
 
 ```text
 assets/
-  sprites/        buds, lantern spirit, petals, fireflies
+  sprites/        flowers, lantern spirit, board candidates, petals, fireflies
   ui/             journal panels, puzzle cards, logo treatments
   fonts/          licensed TTF/OTF fonts, optional
   music/
-    music1.mp3
-    music2.mp3
-    moon_garden.ogg
-    result.ogg
+    music_menu.mp3
+    music_puzzle.mp3
   sfx/
     move.wav
     grow.wav
@@ -27,24 +26,35 @@ assets/
 
 ## Prepared Production Sources
 
-The current art-production pass has prepared these lantern source and runtime-ready
-transparent images:
+Runtime-ready transparent images currently loaded on the puzzle board:
 
 ```text
-assets/sprites/lantern_portrait_green_master.png
-assets/sprites/lantern_portrait_idle.png
-assets/sprites/lantern_board_green_master.png
+assets/sprites/puzzle_board.png
+assets/sprites/flower_board.png
 assets/sprites/lantern_board_idle.png
 ```
 
-Menu music tracks used by the home screen playlist:
+The matching `*_master.png` files and portrait images remain source or future
+presentation assets; they are not loaded in gameplay currently.
+
+Main menu environment currently loaded behind the title and notice-board options:
 
 ```text
-assets/music/music1.mp3
-assets/music/music2.mp3
+assets/sprites/menu.png
+assets/sprites/guide_menu.png
+assets/sprites/guide_puzzle.png
+assets/sprites/plant_menu.png
+assets/sprites/plant_puzzle.png
 ```
 
-The home screen and its mode-selection pages alternate `music1.mp3` and `music2.mp3`
-continuously. `music_style.mp3` remains a production reference and is not played.
-Entering gameplay or results switches away from the menu playlist; if the respective
-optional track is absent, that scene remains silent.
+Music tracks used by the game:
+
+```text
+assets/music/music_menu.mp3
+assets/music/music_puzzle.mp3
+```
+
+The home screen and its mode-selection pages loop `music_menu.mp3`. Tutorials,
+gameplay, and their result overlays loop `music_puzzle.mp3`. `music_style.mp3`
+remains a production reference and is not played. If the corresponding optional
+track is absent, that scene remains silent.

@@ -7,10 +7,19 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 
-from Lumen_Garden.app import LumenGardenApp
-from Lumen_Garden.model import PlantingPhase
+from Lumen_Garden.app import (
+    GARDEN_CARD_RECTS,
+    LumenGardenApp,
+    MENU_BUTTON_RECTS,
+    PLANT_CARD_RECTS,
+    PLANT_CONTROL_RECTS,
+    PUZZLE_BACK_RECT,
+    SCREEN_SIZE,
+)
+from Lumen_Garden.model import Command, Phase, PlantingPhase
 from Lumen_Garden.patterns import PLANTING_PUZZLES
-from Lumen_Garden.puzzles import PUZZLES
+from Lumen_Garden.puzzles import KNOWN_SOLUTIONS, PUZZLES
+from Lumen_Garden.tutorial import TUTORIAL_STEPS
 
 
 class PlantingAppSmokeTests(unittest.TestCase):
@@ -21,22 +30,21 @@ class PlantingAppSmokeTests(unittest.TestCase):
         pygame.quit()
 
     def test_mouse_can_open_garden_mode_and_start_tutorial(self) -> None:
-        self.app._mouse_click((220, 360))
+        self.app._mouse_click(MENU_BUTTON_RECTS[0].center)
         self.assertEqual("garden_menu", self.app.scene)
-        self.app._mouse_click((180, 210))
+        self.app._mouse_click(GARDEN_CARD_RECTS[0].center)
         self.assertEqual("tutorial", self.app.scene)
 
     def test_mouse_can_start_and_act_in_garden_puzzle(self) -> None:
-        self.app._mouse_click((220, 360))
-        self.app._mouse_click((180, 270))
+        self.app._mouse_click(MENU_BUTTON_RECTS[0].center)
+        self.app.tutorial_completed = True
+        self.app._mouse_click(GARDEN_CARD_RECTS[1].center)
         self.assertEqual("game", self.app.scene)
         board, tile = self.app._formal_board_layout(
             self.app.state.puzzle.width, self.app.state.puzzle.height
         )
         player = self.app.state.player
-        self.app._mouse_click(
-            (board.x + player[0] * tile + tile // 2, board.y + player[1] * tile + tile // 2)
-        )
+        self.app._mouse_click(self.app._formal_tile_rect(board, player).center)
         self.assertIsNotNone(self.app.state)
         self.assertEqual(1, self.app.state.generation)
 
@@ -51,15 +59,75 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertEqual(garden_board, planting_board)
         self.assertEqual(47, garden_tile)
 
+    def test_sprite_assets_are_loaded_and_used_for_gameplay(self) -> None:
+        self.assertEqual({"flower", "lantern"}, set(self.app.board_sprites))
+        self.assertIsNotNone(self.app.puzzle_board)
+        self.app.tutorial_completed = True
+        self.app._start_puzzle(0)
+        with patch.object(
+            self.app, "_scaled_board_sprite", wraps=self.app._scaled_board_sprite
+        ) as scaled_sprite, patch.object(
+            self.app, "_scaled_puzzle_board", wraps=self.app._scaled_puzzle_board
+        ) as scaled_board:
+            self.app._draw()
+        requested = {call.args[0] for call in scaled_sprite.call_args_list}
+        self.assertEqual({"flower", "lantern"}, requested)
+        scaled_board.assert_called()
+        self.assertEqual(
+            self.app.guide_puzzle_background.get_at((700, 40)),
+            self.app.screen.get_at((700, 40)),
+        )
+
+    def test_menu_uses_background_art_and_notice_board_buttons(self) -> None:
+        self.assertIsNot(self.app.menu_background, self.app.background)
+        self.assertIsNot(self.app.guide_menu_background, self.app.background)
+        self.assertIsNot(self.app.guide_puzzle_background, self.app.background)
+        self.assertIsNot(self.app.plant_menu_background, self.app.background)
+        self.assertIsNot(self.app.plant_puzzle_background, self.app.background)
+        self.assertTrue(all(rect.centerx > SCREEN_SIZE[0] // 2 for rect in MENU_BUTTON_RECTS))
+        self.assertTrue(all(rect.right < SCREEN_SIZE[0] // 2 for rect in GARDEN_CARD_RECTS))
+        self.assertTrue(all(rect.right < SCREEN_SIZE[0] // 2 + 50 for rect in PLANT_CARD_RECTS))
+
+    def test_garden_puzzles_unlock_in_order_after_completion(self) -> None:
+        self.app._open_garden_menu()
+        self.app._mouse_click(GARDEN_CARD_RECTS[1].center)
+        self.assertEqual("garden_menu", self.app.scene)
+        self.assertIn("完成上一关", self.app.message)
+
+        self.app.tutorial_step = len(TUTORIAL_STEPS)
+        self.app._load_tutorial_step()
+        self.app._mouse_click(GARDEN_CARD_RECTS[1].center)
+        self.assertEqual("game", self.app.scene)
+        for action in KNOWN_SOLUTIONS[0]:
+            self.app._issue(Command[action])
+        self.assertEqual(Phase.WON, self.app.state.phase)
+
+        self.app.scene = "garden_menu"
+        self.app._mouse_click(GARDEN_CARD_RECTS[2].center)
+        self.assertEqual("game", self.app.scene)
+        self.assertEqual(2, self.app.state.puzzle.number)
+
+    def test_board_sprites_anchor_visible_art_at_cell_center(self) -> None:
+        board, _ = self.app._formal_board_layout(10, 10)
+        cell = self.app._formal_tile_rect(board, (9, 9))
+        for name in ("flower", "lantern"):
+            sprite = self.app._scaled_board_sprite(name, cell.size)
+            self.assertIsNotNone(sprite)
+            visible = sprite.get_bounding_rect(min_alpha=4)
+            destination = self.app._sprite_destination(sprite, cell)
+            drawn = visible.move(destination.topleft)
+            self.assertLessEqual(abs(drawn.centerx - cell.centerx), 1)
+            self.assertLessEqual(abs(drawn.centery - cell.centery), 1)
+
     def test_mouse_can_change_settings(self) -> None:
-        self.app._mouse_click((220, 540))
+        self.app._mouse_click(MENU_BUTTON_RECTS[2].center)
         self.assertTrue(self.app.settings_open)
         self.app._mouse_click((440, 300))
         self.assertEqual((1024, 576), self.app.window_size)
         volume = self.app.audio.volume
-        self.app._mouse_click((680, 430))
+        self.app._mouse_click((680, 460))
         self.assertGreater(self.app.audio.volume, volume)
-        self.app._mouse_click((750, 430))
+        self.app._mouse_click((750, 460))
         self.assertFalse(self.app.audio.enabled)
         self.app._mouse_click((500, 530))
         self.assertFalse(self.app.settings_open)
@@ -70,36 +138,44 @@ class PlantingAppSmokeTests(unittest.TestCase):
         stop_text_input.assert_called_once_with()
 
     def test_complete_planting_puzzle_with_mouse_and_autoplay(self) -> None:
-        self.app._mouse_click((220, 450))
+        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
         self.assertEqual("planting_menu", self.app.scene)
-        self.app._mouse_click((200, 220))
+        self.app._mouse_click(PLANT_CARD_RECTS[0].center)
         self.assertEqual("planting", self.app.scene)
-        for point in ((377, 408), (377, 361), (330, 361), (283, 361)):
-            self.app._mouse_click(point)
-        self.app._mouse_click((283, 361))
+        board, tile = self.app._formal_board_layout(
+            self.app.planting_state.puzzle.width, self.app.planting_state.puzzle.height
+        )
+
+        def click_cell(point: tuple[int, int]) -> None:
+            self.app._mouse_click(self.app._formal_tile_rect(board, point).center)
+
+        for point in ((6, 5), (6, 4), (5, 4), (4, 4)):
+            click_cell(point)
+        click_cell((4, 4))
         self.assertEqual(1, self.app.planting_state.seeds_left)
         self.assertIn("可按 P 播种", self.app.message)
-        self.app._mouse_click((710, 585))
-        self.app._mouse_click((283, 361))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[0].center)
+        click_cell((4, 4))
         self.assertEqual(PlantingPhase.PLANTING, self.app.planting_state.phase)
         self.assertIn("SPACE 或 ENTER", self.app.message)
-        self.app._mouse_click((900, 585))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[2].center)
         self.assertTrue(self.app.planting_autoplay)
-        self.app._mouse_click((710, 585))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[0].center)
         self.assertFalse(self.app.planting_autoplay)
         self.app._update_planting_playback(0.71)
         self.assertEqual(0, self.app.planting_state.generation)
-        self.app._mouse_click((810, 585))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[1].center)
         self.assertEqual(1, self.app.planting_state.generation)
-        self.app._mouse_click((710, 585))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[0].center)
         self.assertTrue(self.app.planting_autoplay)
         for _ in range(2):
             self.app._update_planting_playback(0.71)
         self.assertIsNotNone(self.app.planting_state)
         self.assertEqual(PlantingPhase.WON, self.app.planting_state.phase)
+        self.assertTrue(self.app._planting_entry_unlocked(1))
         self.assertTrue(self.app.planting_autoplay)
         self.assertGreaterEqual(len(self.app.planting_showcase_frames), 2)
-        self.app._mouse_click((710, 585))
+        self.app._mouse_click(PLANT_CONTROL_RECTS[0].center)
         self.assertFalse(self.app.planting_autoplay)
         self.app._draw()
         pygame.display.flip()
@@ -138,6 +214,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertTrue(self.app.planting_autoplay)
 
     def test_blinker_center_accepts_seed_and_can_exit_vertically(self) -> None:
+        self.app.completed_planting.add(0)
         self.app._start_planting(1)
         state = self.app.planting_state
         for key in (pygame.K_LEFT, pygame.K_LEFT, pygame.K_UP):
@@ -156,6 +233,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertEqual((4, 6), state.player)
 
     def test_winning_lwss_replays_verified_frames_without_advancing_state(self) -> None:
+        self.app.completed_planting.update(range(4))
         self.app._start_planting(4)
         state = self.app.planting_state
         self.assertIsNotNone(state)
@@ -182,23 +260,31 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertEqual(frames, tuple(self.app.planting_showcase_frames))
 
     def test_mouse_can_open_fifth_planting_pattern(self) -> None:
-        self.app._mouse_click((220, 450))
-        self.app._mouse_click((200, 480))
+        self.app.completed_planting.update(range(4))
+        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.app._mouse_click(PLANT_CARD_RECTS[4].center)
         self.assertEqual("planting", self.app.scene)
         self.assertIsNotNone(self.app.planting_state)
         self.assertEqual(5, self.app.planting_state.puzzle.number)
 
+    def test_locked_planting_pattern_does_not_start(self) -> None:
+        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.app._mouse_click(PLANT_CARD_RECTS[1].center)
+        self.assertEqual("planting_menu", self.app.scene)
+        self.assertIn("完成上一关", self.app.message)
+
     def test_mouse_back_from_puzzle_restores_menu_music(self) -> None:
+        self.app.tutorial_completed = True
         self.app._start_puzzle(0)
         with patch.object(self.app.audio, "play_music") as play_music:
-            self.app._mouse_click((1040, 565))
+            self.app._mouse_click(PUZZLE_BACK_RECT.center)
         self.assertEqual("garden_menu", self.app.scene)
         play_music.assert_called_once_with("menu")
 
     def test_mouse_back_from_planting_restores_menu_music(self) -> None:
         self.app._start_planting(0)
         with patch.object(self.app.audio, "play_music") as play_music:
-            self.app._mouse_click((1110, 585))
+            self.app._mouse_click(PLANT_CONTROL_RECTS[4].center)
         self.assertEqual("planting_menu", self.app.scene)
         play_music.assert_called_once_with("menu")
 

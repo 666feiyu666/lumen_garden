@@ -6,7 +6,7 @@
 
 本轮讨论已确认：当前带有月夜花园、`10 x 10` 土格花圃、金色灯灵与右侧木框羊皮纸手记面板的概念图，不再只是探索参考，而是正式版本需要逐步逼近的**最终目标画面**。为了让目标画面能够真实互动，程序仍负责文字、数字、棋盘状态、按钮文案与交互反馈；生成式图片资产负责角色、植物、环境背景、土格/边框、装饰与空白 UI 皮肤。拆层是达成概念图的工程方法，不是另起一种风格方案。
 
-首页音乐素材已经准备在 `assets/music/` 下，当前包含 `music1.mp3`、`music2.mp3` 与 `music_style.mp3`。实现补充后，首页及模式选择页会在 `music1.mp3` 与 `music2.mp3` 之间持续轮播；`music_style.mp3` 作为制作参考不参与运行播放。
+音乐素材已经准备在 `assets/music/` 下，当前包含 `music_menu.mp3`、`music_puzzle.mp3` 与 `music_style.mp3`。首页及模式选择页使用 `music_menu.mp3`，教程、玩法与结算浮层使用 `music_puzzle.mp3`；`music_style.mp3` 作为制作参考不参与运行播放。
 
 ## 已确认设计决策
 
@@ -101,10 +101,8 @@
 首页音乐已有候选/来源文件；运行时继续使用以下资源入口补入最小音频集合：
 
 ```text
-assets/music/music1.mp3
-assets/music/music2.mp3
-assets/music/moon_garden.ogg
-assets/music/result.ogg
+assets/music/music_menu.mp3
+assets/music/music_puzzle.mp3
 assets/sfx/move.wav
 assets/sfx/grow.wav
 assets/sfx/reject.wav
@@ -113,7 +111,7 @@ assets/sfx/lose.wav
 assets/sfx/select.wav
 ```
 
-已准备的首页音乐方向为安静、循环不疲劳的月夜花园氛围；首页运行时交替播放 `music1.mp3` 和 `music2.mp3`。音效首先保障移动、播种/生长、拒绝和成功等操作反馈可辨认，不以大量环境声盖过思考节奏。
+已准备两首安静、循环不疲劳的月夜花园氛围音乐；首页及模式选择页循环播放 `music_menu.mp3`，教程、玩法与结算浮层循环播放 `music_puzzle.mp3`。音效首先保障移动、播种/生长、拒绝和成功等操作反馈可辨认，不以大量环境声盖过思考节奏。
 
 ## 首轮生成与验证方案
 
@@ -152,4 +150,4 @@ assets/sfx/select.wav
 
 ## 当前状态
 
-已于 2026-05-27 完成本 harness：最终目标画面、风格路线、灯灵双视角、透明素材原则与分层素材提示词均已确定，首页已接入 `music1.mp3` / `music2.mp3` 双曲轮播。具体图片生成筛选、游戏内美术加载及玩法/结算音频补充作为后续任务推进。
+已于 2026-05-27 完成本 harness：最终目标画面、风格路线、灯灵双视角、透明素材原则与分层素材提示词均已确定；首页已接入 `menu.png` 作为场景背景，并将两个模式入口与设置纵向放置于右侧告示板；首页已接入 `music_menu.mp3`，教程、玩法与结算浮层已接入 `music_puzzle.mp3`；测试用 `flower_board.png` 与 `lantern_board_idle.png` 已接入玩法渲染。`puzzle_board.png` 暂保留为候选底图，当前玩法继续使用程序绘制棋盘以保障格位清晰对齐。
