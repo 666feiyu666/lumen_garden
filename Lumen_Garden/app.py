@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import pygame
 
 from .audio import AudioManager
-from .patterns import PLANTING_PUZZLES
+from .patterns import GLIDER, PLANTING_PUZZLES, translate
 from .puzzles import PUZZLES
-from .model import Command, GameState, Phase, PlantingPhase, PlantingState
+from .model import Command, GameState, Phase, PlantingPhase, PlantingState, grow_once
 from .tutorial import TUTORIAL_CARD, TUTORIAL_STEPS, TutorialStep
 
 SCREEN_SIZE = (1280, 720)
@@ -19,9 +20,14 @@ PLANTING_PLAYBACK_INTERVAL = 0.7
 ASSET_ROOT = Path(__file__).resolve().parent.parent / "assets"
 MENU_BACKGROUND_PATH = "sprites/menu.png"
 GUIDE_MENU_BACKGROUND_PATH = "sprites/guide_menu.png"
+TUTORIAL_MENU_BACKGROUND_PATH = "sprites/tutorial_menu.png"
+GARDEN_BACKGROUND_PATH = "sprites/garden.png"
 GUIDE_PUZZLE_BACKGROUND_PATH = "sprites/guide_puzzle.png"
 PLANT_MENU_BACKGROUND_PATH = "sprites/plant_menu.png"
 PLANT_PUZZLE_BACKGROUND_PATH = "sprites/plant_puzzle.png"
+INTRODUCTION_PATH = "sprites/Introduction_1.png"
+ENDING_PATH = "sprites/end_1.png"
+SETTING_PANEL_PATH = "sprites/setting.png"
 PUZZLE_BOARD_PATH = "sprites/puzzle_board.png"
 PUZZLE_BOARD_SOURCE_SIZE = 500
 PUZZLE_BOARD_X_CELLS = (
@@ -32,7 +38,7 @@ PUZZLE_BOARD_Y_CELLS = (
     (32, 68), (73, 109), (115, 150), (156, 192), (197, 234),
     (240, 275), (281, 317), (323, 359), (365, 400), (406, 441),
 )
-MENU_BUTTON_RECTS = tuple(pygame.Rect(819, 228 + index * 84, 342, 66) for index in range(3))
+MENU_BUTTON_RECTS = tuple(pygame.Rect(819, 192 + index * 74, 342, 58) for index in range(4))
 GARDEN_CARD_RECTS = (
     pygame.Rect(122, 133, 398, 62),
     pygame.Rect(122, 209, 398, 69),
@@ -158,6 +164,103 @@ REASON_EN = {
 }
 
 
+@dataclass(frozen=True)
+class ForestRoom:
+    number: int
+    name: str
+    name_en: str
+    goal: str
+    goal_en: str
+    width: int
+    height: int
+    player_start: tuple[int, int]
+    exit_cell: tuple[int, int]
+    ordinary_plants: frozenset[tuple[int, int]]
+    mechanism_plants: frozenset[tuple[int, int]] = frozenset()
+    mechanism_missing: tuple[int, int] | None = None
+    seed_cell: tuple[int, int] | None = None
+    receiver_cell: tuple[int, int] | None = None
+    initial_door_open: bool = False
+    next_message: str = ""
+    next_message_en: str = ""
+
+
+@dataclass
+class ForestState:
+    room: ForestRoom
+    player: tuple[int, int]
+    ordinary_plants: set[tuple[int, int]]
+    mechanism_plants: set[tuple[int, int]]
+    mechanism_active: bool = False
+    seed_cell: tuple[int, int] | None = None
+    carrying_seed: bool = False
+    door_open: bool = False
+    generation: int = 0
+    completed: bool = False
+
+
+_ROOM2_GLIDER = translate(GLIDER.blooms, 2, 2)
+_ROOM2_MISSING = (4, 4)
+_ROOM2_START = frozenset(_ROOM2_GLIDER - {_ROOM2_MISSING})
+_ROOM3_GLIDER = translate(GLIDER.blooms, 1, 2)
+_ROOM3_MISSING = (3, 4)
+_ROOM3_START = frozenset(_ROOM3_GLIDER - {_ROOM3_MISSING})
+
+FOREST_ROOMS: tuple[ForestRoom, ...] = (
+    ForestRoom(
+        1,
+        "普通植物房",
+        "Ordinary Grove",
+        "穿过会生长与熄灭的花和蘑菇，到达左侧出口。",
+        "Cross the living plants and reach the left edge exit.",
+        10,
+        10,
+        (6, 9),
+        (0, 5),
+        frozenset({(2, 4), (3, 4), (4, 4), (3, 5), (1, 6), (2, 6), (3, 6)}),
+        initial_door_open=True,
+        next_message="普通植物会随灯灵行动生长或熄灭。",
+        next_message_en="Ordinary plants grow or fade whenever the lantern acts.",
+    ),
+    ForestRoom(
+        2,
+        "机关植物房",
+        "Mechanism Grove",
+        "拾起流光种的缺失种子，补回形状并启动它。",
+        "Recover the missing glider seed, restore the shape, and awaken it.",
+        10,
+        10,
+        (5, 9),
+        (9, 0),
+        frozenset(),
+        _ROOM2_START,
+        _ROOM2_MISSING,
+        (5, 8),
+        (5, 5),
+        next_message="机关植物在启动前休眠；启动后才按生命规则飞行。",
+        next_message_en="Mechanism plants sleep until awakened; then they follow Life rules.",
+    ),
+    ForestRoom(
+        3,
+        "混合房",
+        "Mixed Grove",
+        "让普通植物让路，同时唤醒流光种打开森林出口。",
+        "Read the ordinary plants while awakening the glider to open the forest exit.",
+        10,
+        10,
+        (5, 9),
+        (4, 0),
+        frozenset({(5, 6), (6, 6), (7, 6), (6, 7), (1, 6), (1, 7), (2, 7)}),
+        _ROOM3_START,
+        _ROOM3_MISSING,
+        (6, 8),
+        (4, 5),
+        next_message="普通植物一直呼吸；机关植物醒来后加入同一节奏。",
+        next_message_en="Ordinary plants always breathe; awakened mechanisms join the rhythm.",
+    ),
+)
+
+
 class LumenGardenApp:
     def __init__(self) -> None:
         pygame.init()
@@ -179,6 +282,7 @@ class LumenGardenApp:
         self.settings_open = False
         self.state: GameState | None = None
         self.planting_state: PlantingState | None = None
+        self.forest_state: ForestState | None = None
         self.planting_autoplay = False
         self.planting_playback_timer = 0.0
         self.planting_showcase_frames: list[frozenset[tuple[int, int]]] = []
@@ -188,6 +292,8 @@ class LumenGardenApp:
         self.tutorial_completed = False
         self.completed_puzzles: set[int] = set()
         self.completed_planting: set[int] = set()
+        self.forest_completed = False
+        self.forest_resume_room = 0
         self.message = "选择一则月夜谜题"
         self.message_timer = 0.0
         self.flash_timer = 0.0
@@ -203,12 +309,21 @@ class LumenGardenApp:
         self.guide_puzzle_background = (
             self._load_menu_background(GUIDE_PUZZLE_BACKGROUND_PATH) or self.background
         )
+        self.tutorial_menu_background = (
+            self._load_menu_background(TUTORIAL_MENU_BACKGROUND_PATH) or self.guide_puzzle_background
+        )
+        self.garden_background = (
+            self._load_menu_background(GARDEN_BACKGROUND_PATH) or self.guide_puzzle_background
+        )
         self.plant_menu_background = (
             self._load_menu_background(PLANT_MENU_BACKGROUND_PATH) or self.background
         )
         self.plant_puzzle_background = (
             self._load_menu_background(PLANT_PUZZLE_BACKGROUND_PATH) or self.background
         )
+        self.introduction_image = self._load_image(INTRODUCTION_PATH)
+        self.ending_image = self._load_image(ENDING_PATH)
+        self.setting_panel = self._load_image(SETTING_PANEL_PATH)
         self.board_sprites = self._load_board_sprites()
         self.scaled_board_sprites: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
         self.puzzle_board = self._load_puzzle_board()
@@ -341,6 +456,16 @@ class LumenGardenApp:
             return None
         return pygame.transform.smoothscale(source, SCREEN_SIZE)
 
+    @staticmethod
+    def _load_image(relative_path: str) -> pygame.Surface | None:
+        path = ASSET_ROOT / relative_path
+        if not path.exists():
+            return None
+        try:
+            return pygame.image.load(str(path)).convert_alpha()
+        except (OSError, pygame.error):
+            return None
+
     def _scaled_board_sprite(
         self, name: str, size: tuple[int, int]
     ) -> pygame.Surface | None:
@@ -431,8 +556,18 @@ class LumenGardenApp:
                     self._planting_menu_key(event.key)
                 elif self.scene == "tutorial":
                     self._tutorial_key(event.key)
+                elif self.scene == "rules":
+                    self._rules_key(event.key)
                 elif self.scene == "game":
                     self._game_key(event.key)
+                elif self.scene == "intro":
+                    self._intro_key(event.key)
+                elif self.scene == "ending":
+                    self._ending_key(event.key)
+                elif self.scene == "forest":
+                    self._forest_key(event.key)
+                elif self.scene == "garden_coming_soon":
+                    self._coming_soon_key(event.key)
                 else:
                     self._planting_key(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -440,19 +575,21 @@ class LumenGardenApp:
 
     def _menu_key(self, key: int) -> None:
         if key in (pygame.K_ESCAPE, pygame.K_q):
-            self.running = False
+            self._open_settings()
         elif key in (pygame.K_UP, pygame.K_w):
-            self.main_selection = (self.main_selection - 1) % 3
+            self.main_selection = (self.main_selection - 1) % 4
             self.audio.play("select")
         elif key in (pygame.K_DOWN, pygame.K_s):
-            self.main_selection = (self.main_selection + 1) % 3
+            self.main_selection = (self.main_selection + 1) % 4
             self.audio.play("select")
         elif key == pygame.K_p:
-            self._open_planting_menu()
+            self._open_free_garden()
         elif key in (pygame.K_g, pygame.K_0, pygame.K_t):
-            self._open_garden_menu()
+            self._open_rules()
+        elif key == pygame.K_f:
+            self._start_forest_intro()
         elif key in (pygame.K_RETURN, pygame.K_SPACE):
-            (self._open_garden_menu, self._open_planting_menu, self._open_settings)[
+            (self._open_rules, self._start_forest_intro, self._open_free_garden, self._open_settings)[
                 self.main_selection
             ]()
 
@@ -497,6 +634,44 @@ class LumenGardenApp:
         self.planting_selection = 0
         self.audio.play("select")
 
+    def _open_rules(self) -> None:
+        self.scene = "rules"
+        self.state = None
+        self.planting_state = None
+        self.forest_state = None
+        self.message = self._tr(
+            "生命规则",
+            "Life rules",
+        )
+        self.message_timer = 99.0
+        self.audio.play("select")
+        self.audio.play_music("puzzle")
+
+    def _open_free_garden(self) -> None:
+        self.scene = "garden_coming_soon"
+        self.state = None
+        self.planting_state = None
+        self.forest_state = None
+        self.message = self._tr(
+            "荧光花园尚未开放。",
+            "Lumen Garden is not open yet.",
+        )
+        self.message_timer = 99.0
+        self.audio.play("select")
+
+    def _start_forest_intro(self) -> None:
+        self.scene = "intro"
+        self.state = None
+        self.planting_state = None
+        self.forest_state = None
+        self.message = self._tr(
+            "按 ENTER / SPACE 或点击继续",
+            "Press ENTER / SPACE or click to continue.",
+        )
+        self.message_timer = 99.0
+        self.audio.play("select")
+        self.audio.play_music("puzzle")
+
     def _open_settings(self) -> None:
         self.settings_open = True
         self.audio.play("select")
@@ -504,6 +679,27 @@ class LumenGardenApp:
     def _settings_key(self, key: int) -> None:
         if key in (pygame.K_ESCAPE, pygame.K_RETURN):
             self.settings_open = False
+
+    def _intro_key(self, key: int) -> None:
+        if key == pygame.K_ESCAPE:
+            self.scene = "menu"
+            self.audio.play_music("menu")
+        elif key in (pygame.K_RETURN, pygame.K_SPACE):
+            self._start_forest_room(self.forest_resume_room)
+
+    def _ending_key(self, key: int) -> None:
+        if key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+            self._show_unlocked_garden()
+
+    def _coming_soon_key(self, key: int) -> None:
+        if key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+            self.scene = "menu"
+            self.audio.play_music("menu")
+
+    def _rules_key(self, key: int) -> None:
+        if key == pygame.K_ESCAPE:
+            self.scene = "menu"
+            self.audio.play_music("menu")
 
     def _set_window_size(self, size: tuple[int, int]) -> None:
         self.window_size = size
@@ -523,7 +719,7 @@ class LumenGardenApp:
             for index, rect in enumerate(MENU_BUTTON_RECTS):
                 if rect.collidepoint(point):
                     self.main_selection = index
-                    (self._open_garden_menu, self._open_planting_menu, self._open_settings)[
+                    (self._open_rules, self._start_forest_intro, self._open_free_garden, self._open_settings)[
                         index
                     ]()
                     return
@@ -549,25 +745,105 @@ class LumenGardenApp:
             self._planting_click(point)
         elif self.scene == "tutorial":
             self._tutorial_click(point)
+        elif self.scene == "rules":
+            if self._rules_back_rect().collidepoint(point):
+                self.scene = "menu"
+                self.audio.play_music("menu")
+        elif self.scene == "intro":
+            self._start_forest_room(self.forest_resume_room)
+        elif self.scene == "ending":
+            self._show_unlocked_garden()
+        elif self.scene == "forest":
+            self._forest_click(point)
+        elif self.scene == "garden_coming_soon":
+            self.scene = "menu"
+            self.audio.play_music("menu")
 
     def _settings_click(self, point: tuple[int, int]) -> None:
-        for index, size in enumerate(WINDOW_SIZES):
-            if pygame.Rect(420 + index * 144, 282, 128, 45).collidepoint(point):
+        for index, (size, rect) in enumerate(zip(WINDOW_SIZES, self._settings_size_rects())):
+            if rect.collidepoint(point):
                 self._set_window_size(size)
                 return
-        for language, rect in zip(("zh", "en"), LANGUAGE_BUTTON_RECTS):
+        for language, rect in zip(("zh", "en"), self._settings_language_rects()):
             if rect.collidepoint(point):
                 self._set_language(language)
                 self.audio.play("select")
                 return
-        if pygame.Rect(420, 438, 52, 45).collidepoint(point):
+        minus_rect, plus_rect, mute_rect = self._settings_volume_rects()
+        if minus_rect.collidepoint(point):
             self.audio.set_volume(self.audio.volume - 0.1)
-        elif pygame.Rect(658, 438, 52, 45).collidepoint(point):
+        elif plus_rect.collidepoint(point):
             self.audio.set_volume(self.audio.volume + 0.1)
-        elif pygame.Rect(732, 438, 120, 45).collidepoint(point):
+        elif mute_rect.collidepoint(point):
             self.audio.toggle_enabled()
-        elif pygame.Rect(420, 514, 432, 44).collidepoint(point):
+        back_rect, exit_level_rect, quit_rect = self._settings_action_rects()
+        if back_rect.collidepoint(point):
             self.settings_open = False
+        elif exit_level_rect is not None and exit_level_rect.collidepoint(point):
+            self._exit_current_level()
+        elif quit_rect.collidepoint(point):
+            self.running = False
+
+    def _settings_action_rects(self) -> tuple[pygame.Rect, pygame.Rect | None, pygame.Rect]:
+        panel = self._settings_panel_rect()
+        if self._settings_has_level_exit():
+            return (
+                pygame.Rect(panel.x + 36, panel.y + 388, 148, 44),
+                pygame.Rect(panel.x + 202, panel.y + 388, 166, 44),
+                pygame.Rect(panel.x + 386, panel.y + 388, 120, 44),
+            )
+        return (
+            pygame.Rect(panel.x + 64, panel.y + 388, 200, 44),
+            None,
+            pygame.Rect(panel.x + 304, panel.y + 388, 200, 44),
+        )
+
+    def _settings_has_level_exit(self) -> bool:
+        return self.scene in ("forest", "game", "planting", "tutorial")
+
+    def _settings_panel_rect(self) -> pygame.Rect:
+        if self.setting_panel is not None:
+            return self.setting_panel.get_rect(center=(SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2))
+        return pygame.Rect(378, 142, 524, 446)
+
+    def _settings_size_rects(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect]:
+        panel = self._settings_panel_rect()
+        return (
+            pygame.Rect(panel.x + 64, panel.y + 148, 128, 45),
+            pygame.Rect(panel.x + 212, panel.y + 148, 128, 45),
+            pygame.Rect(panel.x + 360, panel.y + 148, 128, 45),
+        )
+
+    def _settings_language_rects(self) -> tuple[pygame.Rect, pygame.Rect]:
+        panel = self._settings_panel_rect()
+        return (
+            pygame.Rect(panel.x + 178, panel.y + 248, 160, 45),
+            pygame.Rect(panel.x + 356, panel.y + 248, 160, 45),
+        )
+
+    def _settings_volume_rects(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect]:
+        panel = self._settings_panel_rect()
+        return (
+            pygame.Rect(panel.x + 64, panel.y + 330, 52, 45),
+            pygame.Rect(panel.x + 298, panel.y + 330, 52, 45),
+            pygame.Rect(panel.x + 410, panel.y + 330, 106, 45),
+        )
+
+    def _exit_current_level(self) -> None:
+        if self.scene == "forest" and self.forest_state is not None:
+            self.forest_resume_room = self.forest_state.room.number - 1
+            self.message = self._tr(
+                f"下次将从第 {self.forest_state.room.number} 个房间开始。",
+                f"Next time starts from room {self.forest_state.room.number}.",
+            )
+        else:
+            self.message = self._tr("已退出关卡。", "Level exited.")
+        self.settings_open = False
+        self.state = None
+        self.planting_state = None
+        self.forest_state = None
+        self.scene = "menu"
+        self.audio.play_music("menu")
 
     @staticmethod
     def _grid_command(
@@ -705,11 +981,13 @@ class LumenGardenApp:
     def _tutorial_click(self, point: tuple[int, int]) -> None:
         if self.tutorial_step >= len(TUTORIAL_STEPS):
             if PUZZLE_PRIMARY_RECT.collidepoint(point):
-                self._start_puzzle(0)
+                self.scene = "menu"
+                self.state = None
+                self.audio.play_music("menu")
             elif PUZZLE_RETRY_RECT.collidepoint(point):
                 self._start_tutorial()
             elif PUZZLE_BACK_RECT.collidepoint(point):
-                self.scene = "garden_menu"
+                self.scene = "menu"
                 self.state = None
                 self.audio.play_music("menu")
             return
@@ -718,7 +996,7 @@ class LumenGardenApp:
         elif PUZZLE_RETRY_RECT.collidepoint(point):
             self._tutorial_key(pygame.K_r)
         elif PUZZLE_BACK_RECT.collidepoint(point):
-            self.scene = "garden_menu"
+            self.scene = "menu"
             self.state = None
             self.audio.play_music("menu")
         elif self.state is not None and self.tutorial_step < len(TUTORIAL_STEPS):
@@ -754,11 +1032,195 @@ class LumenGardenApp:
             pygame.K_SPACE: Command.WAIT,
         }.get(key)
 
+    def _start_forest_room(self, index: int) -> None:
+        room = FOREST_ROOMS[index]
+        self.forest_state = ForestState(
+            room=room,
+            player=room.player_start,
+            ordinary_plants=set(room.ordinary_plants),
+            mechanism_plants=set(room.mechanism_plants),
+            seed_cell=room.seed_cell,
+            door_open=room.initial_door_open,
+        )
+        self.state = None
+        self.planting_state = None
+        self.scene = "forest"
+        self.bloomed = frozenset()
+        self.faded = frozenset()
+        self.flash_timer = 0.0
+        self.message = self._tr(room.next_message, room.next_message_en)
+        self.message_timer = 99.0
+        self.audio.play_music("puzzle")
+
+    def _forest_key(self, key: int) -> None:
+        if key == pygame.K_ESCAPE:
+            self._open_settings()
+            return
+        if key == pygame.K_r and self.forest_state is not None:
+            self._start_forest_room(self.forest_state.room.number - 1)
+            return
+        if key == pygame.K_p:
+            self._forest_plant_or_start()
+            return
+        command = self._command_for_key(key)
+        if command is not None:
+            self._issue_forest(command)
+
+    def _forest_click(self, point: tuple[int, int]) -> None:
+        assert self.forest_state is not None
+        board, _ = self._formal_board_layout(
+            self.forest_state.room.width, self.forest_state.room.height
+        )
+        if PUZZLE_PRIMARY_RECT.collidepoint(point):
+            self._forest_plant_or_start()
+            return
+        if PUZZLE_RETRY_RECT.collidepoint(point):
+            self._start_forest_room(self.forest_state.room.number - 1)
+            return
+        if PUZZLE_BACK_RECT.collidepoint(point):
+            self.scene = "menu"
+            self.forest_state = None
+            self.audio.play_music("menu")
+            return
+        command = self._formal_grid_command(point, board, self.forest_state.player)
+        if command is not None:
+            self._issue_forest(command)
+
+    def _forest_plant_or_start(self) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        if room.mechanism_missing is None:
+            self.message = self._tr("这个房间没有需要启动的机关植物。", "No mechanism plant waits here.")
+            self.audio.play("reject")
+            return
+        if state.mechanism_active:
+            self.message = self._tr("机关植物已经醒来。移动或等待让它继续飞行。", "The mechanism plant is awake. Move or wait to advance it.")
+            self.audio.play("reject")
+            return
+        if not state.carrying_seed:
+            self.message = self._tr("先拾起流光种的缺失种子。", "Pick up the missing glider seed first.")
+            self.audio.play("reject")
+            return
+        if state.player != room.mechanism_missing:
+            self.message = self._tr("站到高亮缺口上，按 P 补回并启动。", "Stand on the highlighted gap and press P to restore it.")
+            self.audio.play("reject")
+            return
+        before = set(state.mechanism_plants)
+        state.mechanism_plants.add(room.mechanism_missing)
+        state.carrying_seed = False
+        state.mechanism_active = True
+        self.bloomed = frozenset(state.mechanism_plants - before)
+        self.faded = frozenset()
+        self.flash_timer = 0.5
+        self.message = self._tr("流光种醒来了。移动或等待，让它飞向机关。", "The glider wakes. Move or wait to send it onward.")
+        self.audio.play("grow")
+
+    def _issue_forest(self, command: Command) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        dx, dy = command.value
+        target = (state.player[0] + dx, state.player[1] + dy)
+        if command is not Command.WAIT:
+            if not self._forest_inside(target):
+                self.message = self._tr("森林边缘还没有路。", "There is no path beyond this edge.")
+                self.audio.play("reject")
+                return
+            if target in self._forest_blocking_plants():
+                self.message = self._tr("植物挡住了路，试着移动或等待改变它。", "A plant blocks the path; move or wait to change it.")
+                self.audio.play("reject")
+                return
+            state.player = target
+            if state.seed_cell == target:
+                state.carrying_seed = True
+                state.seed_cell = None
+                self.message = self._tr("拾起了一枚流光种。前往缺口按 P。", "You picked up a glider seed. Carry it to the gap and press P.")
+                self.audio.play("select")
+
+        self._advance_forest_plants()
+        self._check_forest_goal()
+        if command is Command.WAIT:
+            self.audio.play("wait")
+        else:
+            self.audio.play("move")
+
+    def _advance_forest_plants(self) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        ordinary_before = set(state.ordinary_plants)
+        mechanism_before = set(state.mechanism_plants)
+        state.ordinary_plants = grow_once(
+            state.ordinary_plants,
+            room.width,
+            room.height,
+            {state.player},
+        )
+        if state.mechanism_active:
+            state.mechanism_plants = grow_once(
+                state.mechanism_plants,
+                room.width,
+                room.height,
+            )
+        state.generation += 1
+        all_before = ordinary_before | mechanism_before
+        all_after = state.ordinary_plants | state.mechanism_plants
+        self.bloomed = frozenset(all_after - all_before)
+        self.faded = frozenset(all_before - all_after)
+        self.flash_timer = 0.45
+
+    def _check_forest_goal(self) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        if room.receiver_cell is not None and room.receiver_cell in state.mechanism_plants:
+            if not state.door_open:
+                self.message = self._tr("流光种触碰机关，出口打开了。", "The glider touches the mechanism; the exit opens.")
+                self.audio.play("win")
+            state.door_open = True
+        if state.player == room.exit_cell and state.door_open:
+            self._complete_forest_room()
+
+    def _complete_forest_room(self) -> None:
+        assert self.forest_state is not None
+        current = self.forest_state.room.number - 1
+        if current + 1 < len(FOREST_ROOMS):
+            self._start_forest_room(current + 1)
+            return
+        self.forest_completed = True
+        self.forest_state = None
+        self.scene = "ending"
+        self.message = self._tr(
+            "灯灵穿过荧光森林，看见了灯漫村的光。",
+            "The lantern leaves the forest and sees the lights of the village.",
+        )
+        self.message_timer = 99.0
+        self.audio.play("win")
+        self.audio.play_music("puzzle")
+
+    def _show_unlocked_garden(self) -> None:
+        self.scene = "garden_coming_soon"
+        self.message = self._tr(
+            "灯漫村的微光回应了它。荧光花园已解锁。",
+            "The village lights answer. Lumen Garden is unlocked.",
+        )
+        self.message_timer = 99.0
+        self.audio.play_music("menu")
+
+    def _forest_inside(self, point: tuple[int, int]) -> bool:
+        assert self.forest_state is not None
+        room = self.forest_state.room
+        return 0 <= point[0] < room.width and 0 <= point[1] < room.height
+
+    def _forest_blocking_plants(self) -> set[tuple[int, int]]:
+        assert self.forest_state is not None
+        state = self.forest_state
+        return set(state.ordinary_plants) | set(state.mechanism_plants)
+
     def _game_key(self, key: int) -> None:
         if key == pygame.K_ESCAPE:
-            self.scene = "garden_menu"
-            self.state = None
-            self.audio.play_music("menu")
+            self._open_settings()
             return
         if pygame.K_1 <= key <= pygame.K_5:
             self._start_puzzle(key - pygame.K_1)
@@ -841,13 +1303,13 @@ class LumenGardenApp:
 
     def _tutorial_key(self, key: int) -> None:
         if key == pygame.K_ESCAPE:
-            self.scene = "garden_menu"
-            self.state = None
-            self.audio.play_music("menu")
+            self._open_settings()
             return
         if self.tutorial_step >= len(TUTORIAL_STEPS):
             if key in (pygame.K_RETURN, pygame.K_SPACE):
-                self._start_puzzle(0)
+                self.scene = "menu"
+                self.state = None
+                self.audio.play_music("menu")
             elif key == pygame.K_r:
                 self._start_tutorial()
             return
@@ -952,9 +1414,7 @@ class LumenGardenApp:
         assert self.planting_state is not None
         state = self.planting_state
         if key == pygame.K_ESCAPE:
-            self.scene = "planting_menu"
-            self.planting_state = None
-            self.audio.play_music("menu")
+            self._open_settings()
             return
         if key == pygame.K_r:
             self._start_planting(self.selected_planting)
@@ -1154,10 +1614,16 @@ class LumenGardenApp:
             background = self.guide_menu_background
         elif self.scene == "planting_menu":
             background = self.plant_menu_background
+        elif self.scene == "rules":
+            background = self.tutorial_menu_background
         elif self.scene in ("tutorial", "game"):
             background = self.guide_puzzle_background
         elif self.scene == "planting":
             background = self.plant_puzzle_background
+        elif self.scene == "garden_coming_soon":
+            background = self.garden_background
+        elif self.scene in ("intro", "ending", "forest"):
+            background = self.guide_puzzle_background
         else:
             background = self.background
         self.screen.blit(background, (0, 0))
@@ -1169,10 +1635,20 @@ class LumenGardenApp:
             self._draw_planting_menu()
         elif self.scene == "tutorial":
             self._draw_tutorial()
+        elif self.scene == "rules":
+            self._draw_rules()
         elif self.scene == "game":
             self._draw_game()
-        else:
+        elif self.scene == "planting":
             self._draw_planting()
+        elif self.scene == "intro":
+            self._draw_intro()
+        elif self.scene == "ending":
+            self._draw_ending()
+        elif self.scene == "forest":
+            self._draw_forest()
+        elif self.scene == "garden_coming_soon":
+            self._draw_coming_soon()
         if self.settings_open:
             self._draw_settings()
 
@@ -1185,9 +1661,10 @@ class LumenGardenApp:
             (80, 174),
         )
         labels = (
-            (self._tr("花园谜题", "GARDEN PUZZLES"), self._tr("引导灯灵，照料生长", "Guide the lantern")),
-            (self._tr("种植花谱", "PLANTING PATTERNS"), self._tr("播下花种，观察演化", "Plant and observe")),
-            (self._tr("设置", "SETTINGS"), self._tr("画面、声音与语言", "Display, audio, language")),
+            (self._tr("教程", "TUTORIAL"), ""),
+            (self._tr("荧光森林", "LUMEN FOREST"), ""),
+            (self._tr("荧光花园", "LUMEN GARDEN"), ""),
+            (self._tr("设置", "SETTINGS"), ""),
         )
         for index, (label, detail) in enumerate(labels):
             rect = MENU_BUTTON_RECTS[index]
@@ -1204,13 +1681,15 @@ class LumenGardenApp:
                 border_radius=8,
             )
             accent = TEXT if selected else (222, 199, 154)
-            self._text(label, self.fonts["h2"], accent, (rect.x + 22, rect.y + 11))
-            self._text(detail, self.fonts["small"], TEXT_MUTED, (rect.x + 153, rect.y + 25))
+            label_surface = self.fonts["h2"].render(label, True, accent)
+            self.screen.blit(label_surface, label_surface.get_rect(center=rect.center))
+            if detail:
+                self._text(detail, self.fonts["small"], TEXT_MUTED, (rect.x + 153, rect.y + 25))
         self._text(
             self._tr("↑ ↓ / ENTER 选择    ESC 退出", "UP / DOWN / ENTER Select    ESC Quit"),
             self.fonts["small"],
             (211, 192, 153),
-            (840, 510),
+            (840, 522),
         )
 
     def _draw_garden_menu(self) -> None:
@@ -1273,39 +1752,327 @@ class LumenGardenApp:
             (PLANT_MENU_BACK_RECT.x + 43, PLANT_MENU_BACK_RECT.y + 11),
         )
 
+    def _draw_intro(self) -> None:
+        self._draw_story_image(
+            self.introduction_image,
+            self._tr("开场漫画素材缺失", "Introduction image missing"),
+        )
+
+    def _draw_ending(self) -> None:
+        self._draw_story_image(
+            self.ending_image,
+            self._tr("结尾漫画素材缺失", "Ending image missing"),
+        )
+
+    def _draw_story_image(
+        self,
+        image: pygame.Surface | None,
+        missing_text: str,
+    ) -> None:
+        self.screen.fill((0, 0, 0))
+        if image is not None:
+            scale = min(SCREEN_SIZE[0] / image.get_width(), SCREEN_SIZE[1] / image.get_height())
+            size = (int(image.get_width() * scale), int(image.get_height() * scale))
+            scaled = pygame.transform.smoothscale(image, size)
+            rect = scaled.get_rect(center=(SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2))
+            self.screen.blit(scaled, rect)
+        else:
+            self._text(missing_text, self.fonts["h1"], TEXT, (420, 300))
+        self._draw_click_hint()
+        self._draw_skip_button()
+
+    def _draw_click_hint(self) -> None:
+        center = (SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] - 31)
+        alpha = 90 + int(50 * (0.5 + 0.5 * math.sin(self.elapsed * 3.0)))
+        hint = pygame.Surface((44, 18), pygame.SRCALPHA)
+        pygame.draw.circle(hint, (245, 238, 215, alpha), (12, 9), 5)
+        pygame.draw.circle(hint, (245, 238, 215, alpha // 2), (27, 9), 5, width=2)
+        pygame.draw.polygon(
+            hint,
+            (245, 238, 215, alpha),
+            ((36, 5), (42, 9), (36, 13)),
+        )
+        self.screen.blit(hint, hint.get_rect(center=center))
+
+    def _draw_skip_button(self) -> None:
+        rect = self._skip_button_rect()
+        label = self._tr("跳过剧情", "SKIP")
+        surface = self.fonts["small"].render(label, True, (232, 224, 200))
+        shade = pygame.Surface(rect.size, pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 128))
+        self.screen.blit(shade, rect.topleft)
+        pygame.draw.rect(self.screen, (116, 106, 86), rect, width=1, border_radius=6)
+        self.screen.blit(surface, surface.get_rect(center=rect.center))
+
+    def _skip_button_rect(self) -> pygame.Rect:
+        label = self._tr("跳过剧情", "SKIP")
+        width, height = self.fonts["small"].size(label)
+        padding_x = 14
+        padding_y = 8
+        return pygame.Rect(
+            SCREEN_SIZE[0] - width - padding_x * 2 - 28,
+            SCREEN_SIZE[1] - height - padding_y * 2 - 22,
+            width + padding_x * 2,
+            height + padding_y * 2,
+        )
+
+    def _draw_coming_soon(self) -> None:
+        panel = pygame.Rect(338, 198, 604, 270)
+        self._rounded_panel(panel, active=False)
+        self._text(self._tr("荧光花园", "LUMEN GARDEN"), self.fonts["title"], TEXT, (panel.x + 72, panel.y + 54))
+        self._draw_wrapped_text(
+            self.message,
+            self.fonts["body"],
+            CYAN,
+            pygame.Rect(panel.x + 80, panel.y + 135, panel.width - 160, 78),
+            28,
+        )
+        self._text(
+            self._tr("ENTER / SPACE / 点击  返回首页", "ENTER / SPACE / Click  Back to menu"),
+            self.fonts["small"],
+            TEXT_MUTED,
+            (panel.x + 177, panel.y + 226),
+        )
+
+    def _draw_rules(self) -> None:
+        rules = (
+            (
+                self._tr("有生命的格子，0 或 1 个邻居：死亡。", "Live cell with 0 or 1 neighbors: dies."),
+                {(1, 1), (2, 2)},
+                {(2, 2)},
+                (2, 2),
+            ),
+            (
+                self._tr("有生命的格子，4 个或更多邻居：死亡。", "Live cell with 4 or more neighbors: dies."),
+                {(1, 1), (2, 1), (3, 1), (2, 2), (1, 3), (3, 3)},
+                {(1, 1), (3, 1), (1, 3), (3, 3)},
+                (2, 2),
+            ),
+            (
+                self._tr("有生命的格子，2 或 3 个邻居：存活。", "Live cell with 2 or 3 neighbors: survives."),
+                {(1, 1), (2, 2), (2, 3)},
+                {(1, 2), (2, 2)},
+                (2, 2),
+            ),
+            (
+                self._tr("空格子，恰好 3 个邻居：诞生。", "Empty cell with exactly 3 neighbors: becomes alive."),
+                {(1, 1), (1, 2), (3, 3)},
+                {(2, 2)},
+                (2, 2),
+            ),
+        )
+        for index, (label, before, after, focus) in enumerate(rules):
+            y = 252 + index * 82
+            self._draw_wrapped_text(label, self.fonts["body"], TEXT, pygame.Rect(104, y + 9, 520, 38), 24)
+            self._draw_rule_grid((744, y), before, focus)
+            self._draw_rule_arrow((846, y + 30))
+            self._draw_rule_grid((948, y), after, focus)
+
+        back = self._rules_back_rect()
+        self._rounded_panel(back, active=True)
+        label = self._tr("返回主页", "HOME")
+        surface = self.fonts["h2"].render(label, True, CYAN)
+        self.screen.blit(surface, surface.get_rect(center=back.center))
+
+    @staticmethod
+    def _rules_back_rect() -> pygame.Rect:
+        return pygame.Rect(104, 632, 210, 48)
+
+    def _draw_rule_grid(
+        self,
+        position: tuple[int, int],
+        cells: set[tuple[int, int]],
+        focus: tuple[int, int],
+    ) -> None:
+        size = 15
+        x0, y0 = position
+        for y in range(5):
+            for x in range(5):
+                rect = pygame.Rect(x0 + x * size, y0 + y * size, size - 1, size - 1)
+                color = (181, 184, 181)
+                if (x, y) == focus:
+                    color = (111, 114, 113)
+                if (x, y) in cells:
+                    color = (248, 246, 101)
+                pygame.draw.rect(self.screen, color, rect)
+
+    def _draw_rule_arrow(self, position: tuple[int, int]) -> None:
+        x, y = position
+        pygame.draw.arc(self.screen, (177, 181, 181), pygame.Rect(x, y - 18, 58, 44), math.radians(205), math.radians(20), 6)
+        pygame.draw.polygon(
+            self.screen,
+            (177, 181, 181),
+            ((x + 55, y + 1), (x + 42, y - 14), (x + 42, y + 13)),
+        )
+
+    def _draw_forest(self) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        board_rect, tile = self._formal_board_layout(room.width, room.height)
+        self._draw_forest_board(board_rect, tile)
+
+        text_x = PUZZLE_TEXT_RECT.x
+        text_width = PUZZLE_TEXT_RECT.width
+        self._text(
+            self._tr(f"荧光森林  {room.number:02d} / {len(FOREST_ROOMS):02d}", f"LUMEN FOREST  {room.number:02d} / {len(FOREST_ROOMS):02d}"),
+            self.fonts["small"],
+            CYAN,
+            (text_x, 160),
+        )
+        self._text(self._tr(room.name, room.name_en), self.fonts["h1"], TEXT, (text_x, 193))
+        self._text(self._tr("目标", "GOAL"), self.fonts["small"], TEXT_MUTED, (text_x, 248))
+        self._draw_wrapped_text(
+            self._tr(room.goal, room.goal_en),
+            self.fonts["small"],
+            TEXT,
+            pygame.Rect(text_x, 272, text_width, 72),
+            23,
+        )
+        self._text(self._tr("状态", "STATUS"), self.fonts["small"], TEXT_MUTED, (text_x, 358))
+        status = self._forest_status_text()
+        self._draw_wrapped_text(status, self.fonts["small"], GOLD, pygame.Rect(text_x, 382, text_width, 58), 22)
+        self._draw_wrapped_text(
+            self.message,
+            self.fonts["small"],
+            CYAN,
+            pygame.Rect(text_x, 460, text_width, 50),
+            22,
+        )
+        self._draw_tutorial_button(PUZZLE_PRIMARY_RECT, self._tr("P  补种/启动", "P  RESTORE"), CYAN)
+        self._draw_tutorial_button(PUZZLE_RETRY_RECT, self._tr("R 重试", "R RETRY"), TEXT_MUTED)
+        self._draw_tutorial_button(PUZZLE_BACK_RECT, self._tr("ESC 返回", "ESC BACK"), TEXT_MUTED)
+
+    def _forest_status_text(self) -> str:
+        assert self.forest_state is not None
+        state = self.forest_state
+        if state.room.mechanism_missing is None:
+            return self._tr(
+                f"普通植物随行动演化  第 {state.generation} 代",
+                f"Ordinary plants evolve with each act. Gen {state.generation}.",
+            )
+        if state.mechanism_active:
+            return self._tr(
+                f"机关植物已启动  第 {state.generation} 代",
+                f"Mechanism plant awake. Gen {state.generation}.",
+            )
+        if state.carrying_seed:
+            return self._tr("携带流光种：站到缺口按 P", "Carrying seed: stand on the gap and press P.")
+        return self._tr("机关植物休眠：先拾起缺失种子", "Mechanism plant sleeps: pick up the missing seed.")
+
+    def _draw_forest_board(self, board: pygame.Rect, tile: int) -> None:
+        assert self.forest_state is not None
+        state = self.forest_state
+        room = state.room
+        board_art = self._scaled_puzzle_board(board.size)
+        if board_art is not None:
+            self.screen.blit(board_art, board.topleft)
+        for y in range(room.height):
+            for x in range(room.width):
+                point = (x, y)
+                rect = self._formal_tile_rect(board, point)
+                if board_art is None:
+                    pygame.draw.rect(self.screen, SOIL, rect, border_radius=7)
+                    pygame.draw.rect(self.screen, SOIL_EDGE, rect, width=1, border_radius=7)
+                if point == room.exit_cell:
+                    color = BUD if state.door_open else DANGER
+                    pygame.draw.rect(self.screen, color, rect.inflate(-8, -8), width=3, border_radius=7)
+                if point == room.receiver_cell:
+                    pygame.draw.circle(self.screen, GOLD if state.door_open else TEXT_MUTED, rect.center, max(5, rect.width // 5), width=3)
+                if point == state.seed_cell:
+                    pygame.draw.circle(self.screen, GOLD, rect.center, max(5, rect.width // 5))
+                    pygame.draw.circle(self.screen, LANTERN_CORE, rect.center, max(2, rect.width // 10))
+                if point == room.mechanism_missing and not state.mechanism_active:
+                    pygame.draw.rect(self.screen, GOLD, rect.inflate(-10, -10), width=2, border_radius=6)
+                if point in state.ordinary_plants:
+                    self._draw_bud(rect, False, point in self.bloomed)
+                elif point in state.mechanism_plants:
+                    self._draw_mechanism_bloom(rect, point in self.bloomed, state.mechanism_active)
+                elif point in self.faded and self.flash_timer > 0:
+                    pygame.draw.circle(self.screen, (74, 111, 87), rect.center, max(3, tile // 6))
+        player_rect = self._formal_tile_rect(board, state.player)
+        self._draw_bud(player_rect, True, False)
+        if state.carrying_seed:
+            pygame.draw.circle(self.screen, GOLD, (player_rect.right - 10, player_rect.top + 10), max(4, player_rect.width // 10))
+
+    def _draw_mechanism_bloom(self, rect: pygame.Rect, newly_bloomed: bool, active: bool) -> None:
+        color = GOLD if active else (113, 116, 122)
+        core = LANTERN_CORE if active else (161, 164, 167)
+        if newly_bloomed and self.flash_timer > 0:
+            color = BUD_CORE
+        glow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (*color, 36 if active else 18), glow.get_rect().center, max(6, rect.width // 3))
+        self.screen.blit(glow, rect.topleft)
+        pygame.draw.polygon(
+            self.screen,
+            color,
+            (
+                (rect.centerx, rect.top + rect.height // 5),
+                (rect.right - rect.width // 5, rect.centery),
+                (rect.centerx, rect.bottom - rect.height // 5),
+                (rect.left + rect.width // 5, rect.centery),
+            ),
+        )
+        pygame.draw.circle(self.screen, core, rect.center, max(3, rect.width // 9))
+
     def _draw_settings(self) -> None:
         veil = pygame.Surface(SCREEN_SIZE, pygame.SRCALPHA)
         veil.fill((5, 8, 14, 170))
         self.screen.blit(veil, (0, 0))
-        panel = pygame.Rect(378, 142, 524, 446)
-        self._rounded_panel(panel, active=False)
-        self._text(self._tr("设置", "SETTINGS"), self.fonts["h1"], TEXT, (420, 183))
-        self._text(self._tr("窗口大小", "WINDOW SIZE"), self.fonts["body"], TEXT_MUTED, (420, 246))
-        for index, size in enumerate(WINDOW_SIZES):
-            rect = pygame.Rect(420 + index * 144, 282, 128, 45)
+        panel = self._settings_panel_rect()
+        if self.setting_panel is not None:
+            self.screen.blit(self.setting_panel, panel)
+        else:
+            self._rounded_panel(panel, active=False)
+        self._text(self._tr("设置", "SETTINGS"), self.fonts["h1"], TEXT, (panel.x + 78, panel.y + 64))
+        self._text(self._tr("窗口大小", "WINDOW SIZE"), self.fonts["body"], TEXT_MUTED, (panel.x + 64, panel.y + 110))
+        for size, rect in zip(WINDOW_SIZES, self._settings_size_rects()):
             self._rounded_panel(rect, active=size == self.window_size)
             self._text(f"{size[0]} x {size[1]}", self.fonts["small"], TEXT, (rect.x + 13, rect.y + 14))
-        self._text(self._tr("语言", "LANGUAGE"), self.fonts["body"], TEXT_MUTED, (420, 357))
-        for language, rect, label in zip(("zh", "en"), LANGUAGE_BUTTON_RECTS, ("简体中文", "English")):
+        self._text(self._tr("语言", "LANGUAGE"), self.fonts["body"], TEXT_MUTED, (panel.x + 64, panel.y + 214))
+        for language, rect, label in zip(("zh", "en"), self._settings_language_rects(), ("简体中文", "English")):
             self._rounded_panel(rect, active=self.language == language)
-            self._text(label, self.fonts["small"], TEXT, (rect.x + 20, rect.y + 11))
-        self._text(self._tr("音量", "VOLUME"), self.fonts["body"], TEXT_MUTED, (420, 410))
-        for rect, label in (
-            (pygame.Rect(420, 438, 52, 45), "-"),
-            (pygame.Rect(658, 438, 52, 45), "+"),
-        ):
+            self._text(label, self.fonts["small"], TEXT, (rect.x + 28, rect.y + 11))
+        self._text(self._tr("音量", "VOLUME"), self.fonts["body"], TEXT_MUTED, (panel.x + 64, panel.y + 304))
+        minus_rect, plus_rect, mute = self._settings_volume_rects()
+        for rect, label in ((minus_rect, "-"), (plus_rect, "+")):
             self._rounded_panel(rect, active=False)
             self._text(label, self.fonts["h2"], TEXT, (rect.x + 19, rect.y + 10))
-        self._text(f"{int(self.audio.volume * 100):03d}%", self.fonts["stat"], TEXT, (526, 445))
-        mute = pygame.Rect(732, 438, 120, 45)
+        self._text(f"{int(self.audio.volume * 100):03d}%", self.fonts["stat"], TEXT, (panel.x + 180, panel.y + 337))
         self._rounded_panel(mute, active=not self.audio.enabled)
         self._text(
             self._tr("静音" if self.audio.enabled else "已静音", "MUTE" if self.audio.enabled else "MUTED"),
-            self.fonts["body"], TEXT, (mute.x + 29, mute.y + 13)
+            self.fonts["body"], TEXT, (mute.x + 27, mute.y + 13)
         )
-        close = pygame.Rect(420, 514, 432, 44)
+        if self._settings_has_level_exit():
+            self._draw_wrapped_text(
+                self._tr(
+                    "退出关卡后，下次将从当前房间开始。",
+                    "Exit the level; next time starts from this room.",
+                ),
+                self.fonts["small"],
+                TEXT_MUTED,
+                pygame.Rect(panel.x + 66, panel.y + 362, 420, 22),
+                20,
+            )
+        close, exit_level, quit_button = self._settings_action_rects()
         self._rounded_panel(close, active=True)
-        self._text(self._tr("关闭设置", "CLOSE SETTINGS"), self.fonts["h2"], CYAN, (562, 525))
+        self._text(self._tr("返回", "BACK"), self.fonts["h2"], CYAN, (close.x + 40, close.y + 11))
+        if exit_level is not None:
+            self._rounded_panel(exit_level, active=False)
+            self._text(
+                self._tr("退出关卡", "EXIT LEVEL"),
+                self.fonts["small"],
+                GOLD,
+                (exit_level.x + 37, exit_level.y + 14),
+            )
+        self._rounded_panel(quit_button, active=False)
+        self._text(
+            self._tr("退出游戏", "QUIT"),
+            self.fonts["small"] if exit_level is not None else self.fonts["h2"],
+            DANGER,
+            (quit_button.x + (43 if exit_level is not None else 56), quit_button.y + (14 if exit_level is not None else 11)),
+        )
 
     def _draw_tutorial(self) -> None:
         if self.tutorial_step >= len(TUTORIAL_STEPS):

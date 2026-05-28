@@ -200,4 +200,4 @@ grow_once(blooms, width, height, extra_lights=frozenset()) -> set[Point]
 6. 下一步试玩：校准双模式五关的实际难度梯度，并验证玩家是否理解“先播种，后放手”及动态演示。
 7. 在双模式第一册成立后，再进行美术音乐迭代和已完成花谱的独立观察/收藏页面。
 
-本轮交互与成谱演示范围见 [05 Harness Prompt](../harness/05-planting-input-and-pattern-showcase.md)；经典图案扩展范围见 [04 Harness Prompt](../harness/04-classic-pattern-expansion.md)；固定花圃与教学播放范围见 [03 Harness Prompt](../harness/03-fixed-garden-and-planting-playback.md)。
+本轮交互与成谱演示范围见 [05 Harness Prompt](../../harness/05-planting-input-and-pattern-showcase.md)；经典图案扩展范围见 [04 Harness Prompt](../../harness/04-classic-pattern-expansion.md)；固定花圃与教学播放范围见 [03 Harness Prompt](../../harness/03-fixed-garden-and-planting-playback.md)。

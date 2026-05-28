@@ -29,14 +29,14 @@ class PlantingAppSmokeTests(unittest.TestCase):
     def tearDown(self) -> None:
         pygame.quit()
 
-    def test_mouse_can_open_garden_mode_and_start_tutorial(self) -> None:
+    def test_mouse_can_open_static_rules_tutorial(self) -> None:
         self.app._mouse_click(MENU_BUTTON_RECTS[0].center)
-        self.assertEqual("garden_menu", self.app.scene)
-        self.app._mouse_click(GARDEN_CARD_RECTS[0].center)
-        self.assertEqual("tutorial", self.app.scene)
+        self.assertEqual("rules", self.app.scene)
+        self.app._mouse_click(self.app._rules_back_rect().center)
+        self.assertEqual("menu", self.app.scene)
 
     def test_mouse_can_start_and_act_in_garden_puzzle(self) -> None:
-        self.app._mouse_click(MENU_BUTTON_RECTS[0].center)
+        self.app._open_garden_menu()
         self.app.tutorial_completed = True
         self.app._mouse_click(GARDEN_CARD_RECTS[1].center)
         self.assertEqual("game", self.app.scene)
@@ -81,7 +81,9 @@ class PlantingAppSmokeTests(unittest.TestCase):
     def test_menu_uses_background_art_and_notice_board_buttons(self) -> None:
         self.assertIsNot(self.app.menu_background, self.app.background)
         self.assertIsNot(self.app.guide_menu_background, self.app.background)
+        self.assertIsNot(self.app.tutorial_menu_background, self.app.background)
         self.assertIsNot(self.app.guide_puzzle_background, self.app.background)
+        self.assertIsNotNone(self.app.setting_panel)
         self.assertIsNot(self.app.plant_menu_background, self.app.background)
         self.assertIsNot(self.app.plant_puzzle_background, self.app.background)
         self.assertTrue(all(rect.centerx > SCREEN_SIZE[0] // 2 for rect in MENU_BUTTON_RECTS))
@@ -120,17 +122,38 @@ class PlantingAppSmokeTests(unittest.TestCase):
             self.assertLessEqual(abs(drawn.centery - cell.centery), 1)
 
     def test_mouse_can_change_settings(self) -> None:
-        self.app._mouse_click(MENU_BUTTON_RECTS[2].center)
+        self.app._mouse_click(MENU_BUTTON_RECTS[3].center)
         self.assertTrue(self.app.settings_open)
         self.app._mouse_click((440, 300))
         self.assertEqual((1024, 576), self.app.window_size)
         volume = self.app.audio.volume
         self.app._mouse_click((680, 460))
         self.assertGreater(self.app.audio.volume, volume)
-        self.app._mouse_click((750, 460))
+        self.app._mouse_click((800, 460))
         self.assertFalse(self.app.audio.enabled)
         self.app._mouse_click((500, 530))
         self.assertFalse(self.app.settings_open)
+
+    def test_escape_on_menu_opens_settings_and_quit_button_exits(self) -> None:
+        self.app._menu_key(pygame.K_ESCAPE)
+        self.assertTrue(self.app.settings_open)
+        self.assertTrue(self.app.running)
+        self.app._mouse_click((700, 530))
+        self.assertFalse(self.app.running)
+
+    def test_escape_in_forest_opens_settings_and_exit_level_records_room(self) -> None:
+        self.app._start_forest_room(1)
+        self.app._forest_key(pygame.K_ESCAPE)
+        self.assertTrue(self.app.settings_open)
+        self.assertEqual("forest", self.app.scene)
+        self.app._mouse_click((620, 530))
+        self.assertEqual("menu", self.app.scene)
+        self.assertFalse(self.app.settings_open)
+        self.assertIsNone(self.app.forest_state)
+        self.assertEqual(1, self.app.forest_resume_room)
+        self.app._start_forest_intro()
+        self.app._intro_key(pygame.K_RETURN)
+        self.assertEqual(2, self.app.forest_state.room.number)
 
     def test_game_disables_text_input_so_letter_hotkeys_are_not_ime_composition(self) -> None:
         with patch("pygame.key.stop_text_input") as stop_text_input:
@@ -138,7 +161,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         stop_text_input.assert_called_once_with()
 
     def test_complete_planting_puzzle_with_mouse_and_autoplay(self) -> None:
-        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.app._open_planting_menu()
         self.assertEqual("planting_menu", self.app.scene)
         self.app._mouse_click(PLANT_CARD_RECTS[0].center)
         self.assertEqual("planting", self.app.scene)
@@ -261,17 +284,61 @@ class PlantingAppSmokeTests(unittest.TestCase):
 
     def test_mouse_can_open_fifth_planting_pattern(self) -> None:
         self.app.completed_planting.update(range(4))
-        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.app._open_planting_menu()
         self.app._mouse_click(PLANT_CARD_RECTS[4].center)
         self.assertEqual("planting", self.app.scene)
         self.assertIsNotNone(self.app.planting_state)
         self.assertEqual(5, self.app.planting_state.puzzle.number)
 
     def test_locked_planting_pattern_does_not_start(self) -> None:
-        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.app._open_planting_menu()
         self.app._mouse_click(PLANT_CARD_RECTS[1].center)
         self.assertEqual("planting_menu", self.app.scene)
         self.assertIn("完成上一关", self.app.message)
+
+    def test_menu_story_mode_shows_intro_then_forest_room(self) -> None:
+        self.app._mouse_click(MENU_BUTTON_RECTS[1].center)
+        self.assertEqual("intro", self.app.scene)
+        self.assertIsNotNone(self.app.introduction_image)
+        self.app._intro_key(pygame.K_RETURN)
+        self.assertEqual("forest", self.app.scene)
+        self.assertIsNotNone(self.app.forest_state)
+        self.assertEqual(1, self.app.forest_state.room.number)
+
+    def test_free_garden_entry_is_coming_soon(self) -> None:
+        self.app._mouse_click(MENU_BUTTON_RECTS[2].center)
+        self.assertEqual("garden_coming_soon", self.app.scene)
+        self.assertIn("尚未开放", self.app.message)
+        self.assertIsNot(self.app.garden_background, self.app.guide_puzzle_background)
+
+    def test_forest_mechanism_sleeps_until_restored_and_awakened(self) -> None:
+        self.app._start_forest_room(1)
+        state = self.app.forest_state
+        self.assertIsNotNone(state)
+        start = set(state.mechanism_plants)
+        self.app._issue_forest(Command.WAIT)
+        self.assertEqual(start, state.mechanism_plants)
+        state.carrying_seed = True
+        state.player = state.room.mechanism_missing
+        self.app._forest_plant_or_start()
+        self.assertTrue(state.mechanism_active)
+        restored = set(state.mechanism_plants)
+        self.app._issue_forest(Command.WAIT)
+        self.assertNotEqual(restored, state.mechanism_plants)
+
+    def test_forest_completion_shows_ending_comic_before_garden_unlock(self) -> None:
+        self.app._start_forest_room(2)
+        state = self.app.forest_state
+        self.assertIsNotNone(state)
+        self.assertIsNotNone(self.app.ending_image)
+        state.door_open = True
+        state.player = state.room.exit_cell
+        self.app._complete_forest_room()
+        self.assertEqual("ending", self.app.scene)
+        self.assertTrue(self.app.forest_completed)
+        self.app._ending_key(pygame.K_RETURN)
+        self.assertEqual("garden_coming_soon", self.app.scene)
+        self.assertIn("荧光花园已解锁", self.app.message)
 
     def test_mouse_back_from_puzzle_restores_menu_music(self) -> None:
         self.app.tutorial_completed = True

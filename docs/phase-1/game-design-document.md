@@ -115,7 +115,7 @@
 | 花芽 | 小巧花瓣轮廓，盛放/熄灭状态清晰 |
 | 面板 | 园艺手记或木玻璃卡片，轻量、留白充足 |
 
-概念图生成提示见 [美术概念图 Prompts](art-prompts.md)。
+概念图生成提示见 [美术概念图 Prompts](../../harness/art-prompts.md)。
 
 ## 6. 音频方向
 
@@ -149,4 +149,4 @@
 | 4 | 加入花谱回看、进度保存与更多关卡 | 形成可持续游玩的短篇结构 |
 | 5 | 评估瞬移、额外种植等特殊道具 | 只在基础十关节奏成立后扩展规则 |
 
-本阶段交互打磨范围见 [05 播种确认与花谱循环展示 Harness Prompt](../harness/05-planting-input-and-pattern-showcase.md)；内容扩展范围见 [04 经典动画花谱扩展 Harness Prompt](../harness/04-classic-pattern-expansion.md)。
+本阶段交互打磨范围见 [05 播种确认与花谱循环展示 Harness Prompt](../../harness/05-planting-input-and-pattern-showcase.md)；内容扩展范围见 [04 经典动画花谱扩展 Harness Prompt](../../harness/04-classic-pattern-expansion.md)。
