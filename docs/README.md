@@ -7,7 +7,7 @@
 | 阶段 | 状态 | 目标 |
 | --- | --- | --- |
 | [Phase 1](phase-1/README.md) | 已归档 | 月夜入门、花园谜题、种植花谱第一册、基础美术与音乐接入 |
-| [Phase 2](phase-2/README.md) | 开发中 | 第一章最小闭环：静态教程、开场漫画、三房间荧光森林、结尾漫画、荧光花园占位入口 |
+| [Phase 2](phase-2/README.md) | 开发中 | 第一章 demo：静态教程、开场/结尾漫画、五房间荧光森林、背包图鉴、六花圃荧光花园 hub |
 
 ## Phase 2 入口
 
@@ -23,4 +23,4 @@
 
 ## 执行提示词
 
-用于编码 agent 的阶段性执行提示词收纳于根目录下的 [harness](../harness/README.md)。Phase 2 当前执行记录见 [荧光森林三房间剧情模式](../harness/phase-2/01-forest-story-mode.md)。
+用于编码 agent 的阶段性执行提示词收纳于根目录下的 [harness](../harness/README.md)。Phase 2 当前执行记录见 [五房间森林与荧光花园 Demo](../harness/phase-2/02-forest-garden-complete-demo.md)。
