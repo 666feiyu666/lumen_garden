@@ -155,7 +155,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertEqual(1, self.app.forest_resume_room)
         self.app._start_forest_intro()
         self.app._intro_key(pygame.K_RETURN)
-        self.assertEqual(1, self.app.forest_state.room.number)
+        self.assertEqual(2, self.app.forest_state.room.number)
 
     def test_game_disables_text_input_so_letter_hotkeys_are_not_ime_composition(self) -> None:
         with patch("pygame.key.stop_text_input") as stop_text_input:
@@ -305,7 +305,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.app._intro_key(pygame.K_RETURN)
         self.assertEqual("forest", self.app.scene)
         self.assertIsNotNone(self.app.forest_state)
-        self.assertEqual(0, self.app.forest_state.room.number)
+        self.assertEqual(1, self.app.forest_state.room.number)
 
     def test_free_garden_entry_opens_six_plot_hub(self) -> None:
         self.app._mouse_click(MENU_BUTTON_RECTS[2].center)
@@ -344,7 +344,7 @@ class PlantingAppSmokeTests(unittest.TestCase):
         self.assertIn("荧光花园已解锁", self.app.message)
 
     def test_phase_two_story_has_five_numbered_rooms(self) -> None:
-        self.assertEqual([0, 1, 2, 3, 4], [room.number for room in FOREST_ROOMS])
+        self.assertEqual([1, 2, 3, 4, 5], [room.number for room in FOREST_ROOMS])
         self.assertFalse(FOREST_ROOMS[0].ordinary_plants)
         self.assertTrue(FOREST_ROOMS[2].stone_cells)
         self.assertTrue(FOREST_ROOMS[4].button_cells)

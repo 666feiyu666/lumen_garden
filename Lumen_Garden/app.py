@@ -231,7 +231,7 @@ _ROOM4_BUTTONS = frozenset({(3, 4), (5, 4)})
 
 FOREST_ROOMS: tuple[ForestRoom, ...] = (
     ForestRoom(
-        0,
+        1,
         "引路空庭",
         "Guiding Clearing",
         "熟悉上下左右移动，把灯灵带到发光出口。",
@@ -242,11 +242,11 @@ FOREST_ROOMS: tuple[ForestRoom, ...] = (
         (5, 1),
         frozenset(),
         initial_door_open=True,
-        next_message="第 0 个房间没有植物。先学会移动，再走向目标。",
-        next_message_en="Room 0 has no plants. Learn to move, then reach the goal.",
+        next_message="第 1 个房间没有植物。先学会移动，再走向目标。",
+        next_message_en="Room 1 has no plants. Learn to move, then reach the goal.",
     ),
     ForestRoom(
-        1,
+        2,
         "普通植物房",
         "Ordinary Grove",
         "穿过会生长与熄灭的花和蘑菇，到达左侧出口。",
@@ -262,7 +262,7 @@ FOREST_ROOMS: tuple[ForestRoom, ...] = (
         next_message_en="Ordinary plants grow or fade whenever the lantern acts.",
     ),
     ForestRoom(
-        2,
+        3,
         "静物图案房",
         "Still-Life Grove",
         "靠近被石头保护的四叶眠床，观察它为什么一直稳定。",
@@ -280,7 +280,7 @@ FOREST_ROOMS: tuple[ForestRoom, ...] = (
         next_message_en="Stones protect a 2x2 pattern. Move near it to record the stable structure.",
     ),
     ForestRoom(
-        3,
+        4,
         "机关植物房",
         "Mechanism Grove",
         "拾起流光种的缺失种子，补回形状并启动它。",
@@ -300,7 +300,7 @@ FOREST_ROOMS: tuple[ForestRoom, ...] = (
         next_message_en="Mechanism plants sleep until awakened; then they follow Life rules.",
     ),
     ForestRoom(
-        4,
+        5,
         "脉冲门廊",
         "Blinker Gate",
         "观察摇曳花枝在两个按钮之间交替，趁出口变绿时离开。",
